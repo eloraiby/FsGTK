@@ -30,6 +30,7 @@ let main argv =
                         |]
                       , Widget.VBox
                         (2, [|
+                            Widget.Label "starts here"
                             Widget.GLWidget (-1, 500, fun (width, height) m -> printfn "Render %dx%d" width height; m)
                             Widget.Button("Click 1", { Command = fun m -> printfn "Click 1 %d" m; (m + 1) })
                             Widget.Button("Click 2", { Command = fun m -> printfn "Click 2 %d" m; (m + 1) })

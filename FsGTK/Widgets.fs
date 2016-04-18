@@ -41,6 +41,7 @@ type Range = {
 }
 
 type Widget<'M> =
+    | Label     of string
     | Button    of string * Action<'M>
     | CheckBox  of string * bool * State<bool, 'M>
     | Slider    of string * Range * State<Range, 'M>
@@ -85,6 +86,12 @@ type Widget
 with
     static member toGtk (model: IModel<'M>) (w: Widget<'M>) : Gtk.Widget =
         match w with
+        | Label s ->
+            let l = new Gtk.Label (s)
+            l.Justify <- Gtk.Justification.Left
+            l.SetAlignment(-1.0f, 0.5f)
+            l :> Gtk.Widget
+
         | Button (s, fb) ->
             let but = new Gtk.Button(s)
             but.Clicked.Add (fun _ -> fb.Command |> model.Apply)
