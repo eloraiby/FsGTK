@@ -6,12 +6,16 @@ type TestModel = {
     Saved0      : bool
     Saved1      : bool
     Slider      : Range
+    Elements    : (Guid * string) []
 } with
     static member create () = {
         CheckBox    = false
         Saved0      = false
         Saved1      = false
         Slider      = { Min = 0.0; Max = 20.0; Step = 0.5; Value = 10.0 }
+        Elements    = [| Guid.NewGuid(), "element 1"
+                         Guid.NewGuid(), "element 2"
+                      |]
     }
 
 [<EntryPoint>]
@@ -53,6 +57,10 @@ let main argv =
                             Widget.CheckBox ("CheckBox", { Apply = fun b m -> printfn "toggle: %b" b; { m with CheckBox = b }
                                                            Project = fun m -> m.CheckBox
                                                           })
+
+                            Widget.ListWidget ({ State.Apply    = fun s m -> m
+                                                 State.Project  = fun m -> { Elements.Selection = [||]; Elements.Elements = [||] }
+                                               })
                             |]))
     appRun model widget
     0 // return an integer exit code

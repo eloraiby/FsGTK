@@ -40,6 +40,11 @@ type Range = {
     Value   : float
 }
 
+type Elements = {
+    Selection   : Guid []
+    Elements    : (Guid * string) []
+}
+
 type Widget<'M> =
     | Label     of string
     | Button    of string * Action<'M>
@@ -49,6 +54,7 @@ type Widget<'M> =
     | HBox      of int * Widget<'M>[]
     | VBox      of int * Widget<'M>[]
     | Window    of string * int * int * MenuItem<'M>[] * Widget<'M>
+    | ListWidget    of State<Elements, 'M>
 
 type IModel<'M> =
     abstract Apply  : ('M -> 'M) -> unit
@@ -66,7 +72,7 @@ with
         | Toggle    (s, state)  ->
 
             let mi = new Gtk.CheckMenuItem(s)
-            mi.Active <- false
+
             let update (m: 'M) =
                 let v = state.Project m
                 if v <> mi.Active
@@ -100,36 +106,60 @@ with
 
             m :> Gtk.Widget, Some update
 
+type Expansion =
+    | Expand
+    | KeepSize
+with
+    member x.ToBool =
+        match x with
+        | Expand -> true
+        | _ -> false
+
 type Widget
 with
-    static member toGtk (model: IModel<'M>) (w: Widget<'M>) : Gtk.Widget * ('M -> unit) option =
+    member x.Expand =
+        match x with
+        | Label      _ -> KeepSize
+        | Button     _ -> KeepSize
+        | CheckBox   _ -> KeepSize
+        | Slider     _ -> KeepSize
+        | GLWidget   _ -> Expand
+        | HBox       _ -> Expand
+        | VBox       _ -> Expand
+        | Window     _ -> Expand
+        | ListWidget _ -> Expand
+
+    static member toGtk (model: IModel<'M>) (w: Widget<'M>) : Gtk.Widget * Expansion * ('M -> unit) option =
+        let third w =
+            let _, _, s = w
+            s
+
         match w with
         | Label s ->
             let l = new Gtk.Label (s)
             l.Justify <- Gtk.Justification.Left
             l.SetAlignment(-1.0f, 0.5f)
-            l :> Gtk.Widget, None
+            l :> Gtk.Widget, w.Expand, None
 
         | Button (s, fb) ->
             let but = new Gtk.Button(s)
             but.Clicked.Add (fun _ -> fb.Command |> model.Apply)
-            but :> Gtk.Widget, None
+            but :> Gtk.Widget, w.Expand, None
 
         | CheckBox (s, state) ->
             let cb = new Gtk.CheckButton(s)
             cb.Toggled.Add(fun _ -> state.Apply cb.Active |> model.Apply)
-            cb.Active <- false
+
             let update m =
                 let b = cb.Active
                 let nB = state.Project m
                 if nB <> b
                 then cb.Active <- nB
 
-            cb :> Gtk.Widget, Some update
+            cb :> Gtk.Widget, w.Expand, Some update
 
         | Slider state ->
-            let slider = new Gtk.HScale(0.0, 10.0, 0.5)
-            
+            let slider = new Gtk.HScale(0.0, 1.0, 1.0)
             slider.Value <- 0.0
             slider.ChangeValue.Add(fun _ ->
                 let ov = { Range.Min = slider.Adjustment.Lower
@@ -152,7 +182,7 @@ with
                     slider.Adjustment.StepIncrement <- nV.Step
                     slider.Value <- nV.Value
 
-            slider :> Gtk.Widget, Some update
+            slider :> Gtk.Widget, w.Expand, Some update
 
         | GLWidget (width, height, render) ->
             let glW = new Gtk.GLWidget()
@@ -161,19 +191,19 @@ with
                 let width = glW.Allocation.Width
                 let height = glW.Allocation.Height
                 render (width, height) |> model.Apply)
-            glW :> Gtk.Widget, None
+            glW :> Gtk.Widget, w.Expand, None
 
         | HBox (padding, ws) ->
             let nWs = ws |> Array.map (Widget.toGtk model)
             let hbox = new Gtk.HBox()
             hbox.BorderWidth <- padding |> uint32
             nWs
-            |> Array.iter(fun (w, _) -> hbox.PackStart(w, false, false, 0 |> uint32))
+            |> Array.iter(fun (w, e, _) -> hbox.PackStart(w, e.ToBool, e.ToBool, 0 |> uint32))
             
             let filtered =
                 nWs
-                |> Array.filter (snd >> Option.isSome)
-                |> Array.map (fun (_, u) ->
+                |> Array.filter (third >> Option.isSome)
+                |> Array.map (fun (_, _, u) ->
                     match u with
                     | Some u -> u
                     | None   -> failwith "unreachable")
@@ -182,19 +212,19 @@ with
                 filtered
                 |> Array.iter(fun u -> u m)
 
-            hbox :> Gtk.Widget, Some update
+            hbox :> Gtk.Widget, w.Expand, Some update
 
         | VBox (padding, ws) ->
             let nWs = ws |> Array.map (Widget.toGtk model)
             let vbox = new Gtk.VBox()
             vbox.BorderWidth <- padding |> uint32
             nWs
-            |> Array.iter (fun (w, _) -> vbox.PackStart(w, false, false, 0 |> uint32))
+            |> Array.iter (fun (w, e, _) -> vbox.PackStart(w, e.ToBool, e.ToBool, 0 |> uint32))
 
             let filtered =
                 nWs
-                |> Array.filter (snd >> Option.isSome)
-                |> Array.map (fun (_, u) ->
+                |> Array.filter (third >> Option.isSome)
+                |> Array.map (fun (_, _, u) ->
                     match u with
                     | Some u -> u
                     | None   -> failwith "unreachable")
@@ -203,9 +233,9 @@ with
                 filtered
                 |> Array.iter(fun u -> u m)
 
-            vbox :> Gtk.Widget, Some update
+            vbox :> Gtk.Widget, w.Expand, Some update
 
-        | Window (title, width, height, menus, w) ->
+        | Window (title, width, height, menus, wid) ->
             let window = new Gtk.Window(title)
             window.SetDefaultSize(width, height)
             window.DeleteEvent.Add(fun e -> window.Hide(); Gtk.Application.Quit(); e.RetVal <- true)
@@ -228,8 +258,8 @@ with
 
             vbox.PackStart(menuBar, false, false, 0u)
 
-            let gtkW, u = w |> Widget.toGtk model
-            vbox.PackStart (gtkW, true, true, 0u)
+            let gtkW, e, u = wid |> Widget.toGtk model
+            vbox.PackStart (gtkW, e.ToBool, true, 0u)
 
             let filtered =
                 match u with
@@ -242,10 +272,33 @@ with
                 filtered
                 |> Array.iter (fun u -> u m)
             window.Add vbox
-           
+            
             window.ShowAll()
             window.Show()
-            window :> Gtk.Widget, Some update
+            window :> Gtk.Widget, w.Expand, Some update
+
+        | ListWidget state ->
+            let scrollWindow = new Gtk.ScrolledWindow()
+            scrollWindow.VscrollbarPolicy <- Gtk.PolicyType.Automatic
+            scrollWindow.HscrollbarPolicy <- Gtk.PolicyType.Automatic
+            scrollWindow.Visible <- true
+
+            let lw = new Gtk.ListStore([| typeof<string> |])
+
+            let tv = new Gtk.TreeView(lw)
+            let rendererText = new Gtk.CellRendererText()
+            let column = new Gtk.TreeViewColumn("RIP", rendererText, [| "text" :> obj; 0 :> obj |])
+            tv.HeadersVisible <- false
+            column.SortColumnId <- 0
+            tv.AppendColumn column |> ignore
+
+            for i in 0..50 do
+                lw.AppendValues("Hello") |> ignore
+
+            scrollWindow.Add tv
+            //tv.Selection.
+            
+            scrollWindow :> Gtk.Widget, w.Expand, None
           
 type Model<'M>(init: 'M) =
     let mutable m = init
@@ -264,11 +317,10 @@ let appRun (model: Model<'M>) (w: Widget<'M>) =
     use otk = OpenTK.Toolkit.Init()
     Gtk.Application.Init()
     Gtk.Application.Invoke(fun _ _ ->
-        let gtkW, update = Widget.toGtk model w
+        let gtkW, exp, update = Widget.toGtk model w
         match update with
         | Some u -> u model.Latest
-        | None -> ()
-        ())
+        | None -> printfn "busy: dropping application")
     Gtk.Application.Run()    
 
         
