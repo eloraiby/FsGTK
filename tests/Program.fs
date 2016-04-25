@@ -59,7 +59,15 @@ let main argv =
                                                           })
 
                             Widget.ListWidget ({ State.Apply    = fun s m -> m
-                                                 State.Project  = fun m -> { Elements.Selection = [||]; Elements.Elements = [||] }
+                                                 State.Project  = fun m -> { Elements.Selection = [||]
+                                                                             Elements.Elements  =
+                                                                                [|
+                                                                                Guid.NewGuid(), "Hello 1"
+                                                                                Guid.NewGuid(), "Hello 2"
+                                                                                Guid.NewGuid(), "Hello 3"
+                                                                                Guid.NewGuid(), "Hello 4"
+                                                                                |]
+                                                                             ScrollPosition = 0.0 }
                                                })
                             |]))
     appRun model widget

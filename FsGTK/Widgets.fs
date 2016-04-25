@@ -43,6 +43,7 @@ type Range = {
 type Elements = {
     Selection   : Guid []
     Elements    : (Guid * string) []
+    ScrollPosition  : float
 }
 
 type Widget<'M> =
@@ -177,7 +178,6 @@ with
                 let nV = state.Project m
                 if nV <> ov
                 then
-                    printfn "ov: %f - nV: %f" ov.Value nV.Value
                     slider.SetRange(nV.Min, nV.Max)
                     slider.Adjustment.StepIncrement <- nV.Step
                     slider.Value <- nV.Value
@@ -287,18 +287,40 @@ with
 
             let tv = new Gtk.TreeView(lw)
             let rendererText = new Gtk.CellRendererText()
-            let column = new Gtk.TreeViewColumn("RIP", rendererText, [| "text" :> obj; 0 :> obj |])
+            let column = new Gtk.TreeViewColumn("__", rendererText, [| "text" :> obj; 0 :> obj |])
             tv.HeadersVisible <- false
             column.SortColumnId <- 0
             tv.AppendColumn column |> ignore
-
-            for i in 0..50 do
-                lw.AppendValues("Hello") |> ignore
-
             scrollWindow.Add tv
-            //tv.Selection.
+            let lastHash = ref 0
+
+            let update (m : 'M) =
+                let els = state.Project m
+                
+
+                let hc = els.Elements.GetHashCode()
+                let sels = els.Selection
+                let hc = (sels.GetHashCode() + hc) ^^^ (hc <<< 8)
+                lastHash := hc
+
+                // remove all
+                let iter = ref (Gtk.TreeIter())
+                if lw.GetIterFirst iter
+                then
+                    let mutable b = true
+                    while b do
+                        let oldIter = iter
+                        lw.Remove iter |> ignore
+                        b <- lw.IterNext iter
+
+                // repopulate all
+                els.Elements
+                |> Array.iter(fun (g, s) -> lw.AppendValues s |> ignore)
+                
+                if scrollWindow.Vadjustment.Value <> els.ScrollPosition
+                then scrollWindow.Vadjustment.Value <- els.ScrollPosition
             
-            scrollWindow :> Gtk.Widget, w.Expand, None
+            scrollWindow :> Gtk.Widget, w.Expand, Some update
           
 type Model<'M>(init: 'M) =
     let mutable m = init
