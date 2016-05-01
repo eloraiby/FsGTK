@@ -19,6 +19,7 @@ module FSharp.GtkWidgets
 
 open System
 
+
 type State<'S, 'M> = {
     Apply   : 'S -> 'M -> 'M
     Project : 'M -> 'S
@@ -322,9 +323,12 @@ with
             
             scrollWindow :> Gtk.Widget, w.Expand, Some update
           
-type Model<'M>(init: 'M) =
+type Model<'M>(init: 'M, ui: Widget<'M>) as this =
     let mutable m = init
     let mutable inApply = false
+
+    let gtkW, exp, update = Widget.toGtk this ui
+
     member x.Latest = m
     interface IModel<'M> with
         member x.Apply f =
@@ -332,18 +336,15 @@ type Model<'M>(init: 'M) =
             | false ->
                 inApply <- true
                 m <- f m
+
+                match update with
+                | Some u -> u m
+                | None -> printfn "busy: dropping application"
+
                 inApply <- false
             | _ -> ()
 
-let appRun (model: Model<'M>) (w: Widget<'M>) =
-    use otk = OpenTK.Toolkit.Init()
-    Gtk.Application.Init()
-    Gtk.Application.Invoke(fun _ _ ->
-        let gtkW, exp, update = Widget.toGtk model w
-        match update with
-        | Some u -> u model.Latest
-        | None -> printfn "busy: dropping application")
-    Gtk.Application.Run()    
+   
 
         
 

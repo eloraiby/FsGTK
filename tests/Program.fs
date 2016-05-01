@@ -20,7 +20,6 @@ type TestModel = {
 
 [<EntryPoint>]
 let main argv = 
-    let model = Model<TestModel>(TestModel.create ())
 
     let widget =
         Widget.Window ("Hello"
@@ -70,5 +69,11 @@ let main argv =
                                                                              ScrollPosition = 0.0 }
                                                })
                             |]))
-    appRun model widget
+
+    use otk = OpenTK.Toolkit.Init()
+    Gtk.Application.Init()
+    Gtk.Application.Invoke(fun _ _ ->
+        let model = Model<TestModel>(TestModel.create (), widget)
+        ())
+    Gtk.Application.Run() 
     0 // return an integer exit code
